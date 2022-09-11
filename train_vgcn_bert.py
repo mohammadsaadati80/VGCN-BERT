@@ -68,6 +68,7 @@ l2_decay=args.l2
 dataset_list={'sst', 'cola', 'olid'}
 # hate: 10k, mr: 6753, sst: 7792, r8: 5211
 
+total_train_epochs_0 = 9
 total_train_epochs = 20 
 dropout_rate = 0.2  #0.5 # Dropout rate (1 - keep probability).
 if cfg_ds=='sst' or cfg_ds=='olid':
@@ -88,6 +89,7 @@ elif cfg_ds=='cola':
 MAX_SEQ_LENGTH = 200+gcn_embedding_dim 
 gradient_accumulation_steps = 1
 bert_model_scale = 'bert-base-uncased'
+# bert_model_scale = 'bert-large-uncased'
 do_lower_case = True
 warmup_proportion = 0.1
 
@@ -259,7 +261,7 @@ def predict(model, examples, tokenizer, batch_size):
             
     return np.array(predict_out).reshape(-1), np.array(confidence_out).reshape(-1)
 
-def evaluate(model, gcn_adj_list,predict_dataloader, batch_size, epoch_th, dataset_name):
+def evaluate(model, gcn_adj_list,predict_dataloader, batch_size, epoch_th, dataset_name, step):
     # print("***** Running prediction *****")
     model.eval()
     predict_out = []
@@ -273,7 +275,9 @@ def evaluate(model, gcn_adj_list,predict_dataloader, batch_size, epoch_th, datas
             batch = tuple(t.to(device) for t in batch)
             input_ids, input_mask, segment_ids, y_prob, label_ids, gcn_swop_eye = batch
             # the parameter label_ids is None, model return the prediction score
-            logits = model(gcn_adj_list,gcn_swop_eye,input_ids,  segment_ids, input_mask)
+            if step == 0 : logits = model(input_ids, segment_ids, input_mask)
+            else: logits = model(gcn_adj_list,gcn_swop_eye,input_ids,  segment_ids, input_mask)
+            # 
 
             if cfg_loss_criterion=='mse':
                 if do_softmax_before_mse:
@@ -281,12 +285,16 @@ def evaluate(model, gcn_adj_list,predict_dataloader, batch_size, epoch_th, datas
                 loss = F.mse_loss(logits, y_prob)
             else:
                 if loss_weight is None:
-                    loss = F.cross_entropy(logits.view(-1, num_classes), label_ids)
+                    if step == 0 : loss = F.cross_entropy(logits.logits.view(-1, num_classes), label_ids)
+                    else: loss = F.cross_entropy(logits.view(-1, num_classes), label_ids)
                 else:
-                    loss = F.cross_entropy(logits.view(-1, num_classes), label_ids)
+                    if step == 0 : loss = F.cross_entropy(logits.logits.view(-1, num_classes), label_ids)
+                    else: loss = F.cross_entropy(logits.view(-1, num_classes), label_ids)
+                    
             ev_loss+=loss.item()
 
-            _, predicted = torch.max(logits, -1)
+            if step == 0 : _, predicted = torch.max(logits.logits, -1)
+            else: _, predicted = torch.max(logits, -1)
             predict_out.extend(predicted.tolist())
             all_label_ids.extend(label_ids.tolist())
             eval_accuracy=predicted.eq(label_ids).sum().item()
@@ -309,6 +317,133 @@ def evaluate(model, gcn_adj_list,predict_dataloader, batch_size, epoch_th, datas
 
 
 #%%
+print("\n----- Fine-tuning BERT -----")
+
+# from pytorch_pretrained_bert.modeling import  BertForSequenceClassification, BertForMultipleChoice
+from transformers.models.bert.modeling_bert import  BertForSequenceClassification, BertModel
+start_epoch = 0
+valid_acc_prev = 0
+perform_metrics_prev = 0
+model = BertForSequenceClassification.from_pretrained(bert_model_scale, num_labels=len(label2idx))
+# model = BertForMultipleChoice.from_pretrained(bert_model_scale, num_choices=len(label2idx))
+prev_save_step=-1
+
+model.to(device)
+
+optimizer = BertAdam(model.parameters(), lr=learning_rate0, warmup=warmup_proportion, t_total=total_train_steps, weight_decay=l2_decay)
+
+train_start = time.time()
+global_step_th = int(len(train_examples) / batch_size / gradient_accumulation_steps * start_epoch)
+
+all_loss_list={'train':[],'valid':[],'test':[]}
+all_f1_list={'train':[],'valid':[],'test':[]}
+all_macro_f1_list={'train':[],'valid':[],'test':[]}
+all_acc_list={'train':[],'valid':[],'test':[]}
+for epoch in range(start_epoch, total_train_epochs_0):
+    tr_loss = 0
+    ep_train_start = time.time()
+    model.train()
+    optimizer.zero_grad()
+    # for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
+    for step, batch in enumerate(train_dataloader):
+        if prev_save_step >-1:
+            if step<=prev_save_step: continue
+        if prev_save_step >-1: 
+            prev_save_step=-1
+        batch = tuple(t.to(device) for t in batch)
+        input_ids, input_mask, segment_ids, y_prob, label_ids, gcn_swop_eye = batch
+        
+        # logits = model(gcn_adj_list, gcn_swop_eye, input_ids, segment_ids, input_mask)
+        logits = model(input_ids, segment_ids, input_mask)
+
+        if cfg_loss_criterion=='mse':
+            if do_softmax_before_mse:
+                logits=F.softmax(logits,-1)
+            loss = F.mse_loss(logits, y_prob)
+        else:
+            if loss_weight is None:
+                loss = F.cross_entropy(logits, label_ids)
+            else:
+                loss = F.cross_entropy(logits.logits.view(-1, num_classes), label_ids, loss_weight.float())
+
+        if gradient_accumulation_steps > 1:
+            loss = loss / gradient_accumulation_steps
+        loss.backward()
+
+        tr_loss += loss.item()
+        if (step + 1) % gradient_accumulation_steps == 0:
+            optimizer.step()
+            optimizer.zero_grad()
+            global_step_th += 1
+        if step % 40 == 0:
+            print("Epoch:{}-{}/{}, Train {} Loss: {}, Cumulated time: {}m ".format(epoch, step, len(train_dataloader), cfg_loss_criterion,loss.item(),(time.time() - train_start)/60.0))
+
+    print('--------------------------------------------------------------')
+    # train_loss,train_acc,train_f1,train_macro_f1 = evaluate(model, gcn_adj_list, train_dataloader, batch_size, epoch, 'Train_set')
+    # all_acc_list['train'].append(train_acc)
+    # all_f1_list['train'].append(train_f1)
+    # all_macro_f1_list['train'].append(train_macro_f1)
+    all_loss_list['train'].append(tr_loss)
+    # print("=======================================================================")
+    # print('all_acc_list =', all_acc_list)
+    # print('all_loss_list =', all_loss_list)
+    # print('all_f1_list =', all_f1_list)
+    # print('all_macro_f1_list =', all_macro_f1_list)
+    # print("=======================================================================")
+    test_loss,test_acc,test_f1,test_macro_f1 = evaluate(model, gcn_adj_list, test_dataloader, batch_size, epoch, 'Test_set', 0)
+    all_loss_list['test'].append(test_loss)
+    all_acc_list['test'].append(test_acc)
+    all_f1_list['test'].append(test_f1)
+    all_macro_f1_list['test'].append(test_macro_f1)
+    print("=======================================================================")
+    print('all_acc_list =', all_acc_list)
+    print('all_loss_list =', all_loss_list)
+    print('all_f1_list =', all_f1_list)
+    print('all_macro_f1_list =', all_macro_f1_list)
+    print("=======================================================================")
+    # valid_loss,valid_acc,perform_metrics,valid_macro_f1 = evaluate(model, gcn_adj_list, valid_dataloader, batch_size, epoch, 'Valid_set')
+    # all_loss_list['valid'].append(valid_loss)
+    # all_acc_list['valid'].append(valid_acc)
+    # all_f1_list['valid'].append(perform_metrics)
+    # all_macro_f1_list['valid'].append(valid_macro_f1)
+    # print("=======================================================================")
+    # print('all_acc_list =', all_acc_list)
+    # print('all_loss_list =', all_loss_list)
+    # print('all_f1_list =', all_f1_list)
+    # print('all_macro_f1_list =', all_macro_f1_list)
+    # print("=======================================================================")
+    print("Epoch:{} completed, Total Train Loss:{}, Valid Loss:{}, Spend {}m ".format(epoch, tr_loss, test_loss, (time.time() - train_start)/60.0))
+    # Save a checkpoint
+    # if valid_acc > valid_acc_prev:
+    if test_f1 > perform_metrics_prev:
+        to_save={'epoch': epoch, 'model_state': model.state_dict(),
+                    'test_acc': test_acc, 'lower_case': do_lower_case,
+                    'perform_metrics':test_f1}
+        torch.save(to_save, os.path.join(output_dir, model_file_save))
+        # valid_acc_prev = valid_acc
+        perform_metrics_prev = test_f1
+        test_f1_when_valid_best=test_f1
+        # train_f1_when_valid_best=tr_f1
+        valid_f1_best_epoch=epoch
+
+        if not os.path.exists('bert'):
+            os.makedirs('bert')
+        model.save_pretrained('bert')
+
+
+    # print("=======================================================================")
+    # print('all_acc_list =', all_acc_list)
+    # print('all_loss_list =', all_loss_list)
+    # print('all_f1_list =', all_f1_list)
+    # print('all_macro_f1_list =', all_macro_f1_list)
+    # print("=======================================================================")
+
+print('\n**Optimization Finished!,Total spend:',(time.time() - train_start)/60.0)
+print("**Valid weighted F1: %.3f at %d epoch."%(100*perform_metrics_prev,valid_f1_best_epoch))
+print("**Test weighted F1 when valid best: %.3f"%(100*test_f1_when_valid_best))
+
+print("#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$#$")
+
 from model_vgcn_bert import VGCN_Bert
 print("\n----- Running training -----")
 if will_train_mode_from_checkpoint and os.path.exists(os.path.join(output_dir, model_file_save)):
@@ -335,8 +470,19 @@ else:
     valid_acc_prev = 0
     perform_metrics_prev = 0
     best_macro_f1 = 0
-    model = VGCN_Bert.from_pretrained(bert_model_scale, gcn_adj_dim=gcn_vocab_size, gcn_adj_num=len(gcn_adj_list),gcn_embedding_dim=gcn_embedding_dim, num_labels=len(label2idx))
+    model = VGCN_Bert.from_pretrained('./bert', gcn_adj_dim=gcn_vocab_size, gcn_adj_num=len(gcn_adj_list),gcn_embedding_dim=gcn_embedding_dim, num_labels=len(label2idx))
     prev_save_step=-1
+
+# from pytorch_pretrained_bert.modeling import BertModel, BertForSequenceClassification, BertForMultipleChoice
+# start_epoch = 0
+# valid_acc_prev = 0
+# perform_metrics_prev = 0
+# best_macro_f1 = 0
+# model = BertModel.from_pretrained(bert_model_scale)
+# model = BertForSequenceClassification.from_pretrained(bert_model_scale, num_labels=len(label2idx))
+# model = BertForMultipleChoice.from_pretrained(bert_model_scale, num_choices=len(label2idx))
+# model = BertModel(config=bert_model_scale)
+# prev_save_step=-1
 
 model.to(device)
 
@@ -364,6 +510,7 @@ for epoch in range(start_epoch, total_train_epochs):
         input_ids, input_mask, segment_ids, y_prob, label_ids, gcn_swop_eye = batch
         
         logits = model(gcn_adj_list, gcn_swop_eye, input_ids, segment_ids, input_mask)
+        # logits = model(input_ids, segment_ids, input_mask)
 
         if cfg_loss_criterion=='mse':
             if do_softmax_before_mse:
