@@ -14,7 +14,8 @@ class Vanilla_VGCN_Bert(BertForSequenceClassification):
         self.all_cls_states=[]
         self.output_attentions=output_attentions
         self.vocab_gcn=VocabGraphConvolution(gcn_adj_dim, gcn_adj_num, 128, gcn_embedding_dim) #192/256
-        self.classifier = nn.Linear((gcn_embedding_dim+1)*768, num_labels)
+        self.classifier = nn.Linear((gcn_embedding_dim)*768, num_labels)
+        self.linear2 = nn.Linear((gcn_embedding_dim+1)*768, num_labels)
 
     def forward(self, vocab_adj_list, gcn_swop_eye, input_ids, token_type_ids=None, attention_mask=None, output_all_encoded_layers=False, head_mask=None):
         
@@ -32,6 +33,6 @@ class Vanilla_VGCN_Bert(BertForSequenceClassification):
         cat_out=torch.cat((gcn_vocab_out.squeeze(1),pooled_output), dim=1)
 
         cat_out = self.dropout(cat_out)
-        score_out = self.classifier(cat_out)
+        score_out = self.linear2(cat_out)
 
         return score_out

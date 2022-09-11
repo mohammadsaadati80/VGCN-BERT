@@ -16,6 +16,7 @@ import torch.nn.init as init
 import math
 
 from pytorch_pretrained_bert.modeling import BertModel,BertEmbeddings,BertPooler,BertEncoder
+# from transformers.models.bert.modeling_bert import  BertPooler, BertEncoder, BertEmbeddings, BertModel, BertForSequenceClassification
 
 class VocabGraphConvolution(nn.Module):
     """Vocabulary GCN module.
