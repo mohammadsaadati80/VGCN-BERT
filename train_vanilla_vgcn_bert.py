@@ -269,6 +269,8 @@ def evaluate(model, gcn_adj_list,predict_dataloader, batch_size, epoch_th, datas
 
         f1_metrics=f1_score(np.array(all_label_ids).reshape(-1),
             np.array(predict_out).reshape(-1), average='weighted')
+        macro_f1_metrics=f1_score(np.array(all_label_ids).reshape(-1),
+            np.array(predict_out).reshape(-1), average='macro')
         print("Report:\n"+classification_report(np.array(all_label_ids).reshape(-1),
             np.array(predict_out).reshape(-1),digits=4, target_names=['NOT', 'OFF'])) # target_names=['abusive', 'normal', 'hateful', 'spam']
 
@@ -277,7 +279,7 @@ def evaluate(model, gcn_adj_list,predict_dataloader, batch_size, epoch_th, datas
     print('Epoch : %d, %s: %.3f Acc : %.3f on %s, Spend:%.3f minutes for evaluation'
         % (epoch_th, ' '.join(perform_metrics_str), 100*f1_metrics, 100.*ev_acc, dataset_name,(end-start)/60.0))
     print('--------------------------------------------------------------')
-    return ev_loss, ev_acc, f1_metrics
+    return ev_loss, ev_acc, f1_metrics, macro_f1_metrics
 
 
 #%%
@@ -302,6 +304,7 @@ else:
     start_epoch = 0
     valid_acc_prev = 0
     perform_metrics_prev = 0
+    best_macro_f1 = 0
     model = Vanilla_VGCN_Bert.from_pretrained(bert_model_scale, gcn_adj_dim=gcn_vocab_size, gcn_adj_num=len(gcn_adj_list),gcn_embedding_dim=gcn_embedding_dim, num_labels=len(label2idx))
     prev_save_step=-1
 
@@ -314,6 +317,8 @@ global_step_th = int(len(train_examples) / batch_size / gradient_accumulation_st
 
 all_loss_list={'train':[],'valid':[],'test':[]}
 all_f1_list={'train':[],'valid':[],'test':[]}
+all_macro_f1_list={'train':[],'valid':[],'test':[]}
+all_acc_list={'train':[],'valid':[],'test':[]}
 for epoch in range(start_epoch, total_train_epochs):
     tr_loss = 0
     ep_train_start = time.time()
@@ -353,27 +358,64 @@ for epoch in range(start_epoch, total_train_epochs):
             print("Epoch:{}-{}/{}, Train {} Loss: {}, Cumulated time: {}m ".format(epoch, step, len(train_dataloader), cfg_loss_criterion,loss.item(),(time.time() - train_start)/60.0))
 
     print('--------------------------------------------------------------')
-    valid_loss,valid_acc,perform_metrics = evaluate(model, gcn_adj_list, valid_dataloader, batch_size, epoch, 'Valid_set')
-    test_loss,_,test_f1 = evaluate(model, gcn_adj_list, test_dataloader, batch_size, epoch, 'Test_set')
+    # train_loss,train_acc,train_f1,train_macro_f1 = evaluate(model, gcn_adj_list, train_dataloader, batch_size, epoch, 'Train_set')
+    # all_acc_list['train'].append(train_acc)
+    # all_f1_list['train'].append(train_f1)
+    # all_macro_f1_list['train'].append(train_macro_f1)
     all_loss_list['train'].append(tr_loss)
-    all_loss_list['valid'].append(valid_loss)
+    # print("=======================================================================")
+    # print('all_acc_list =', all_acc_list)
+    # print('all_loss_list =', all_loss_list)
+    # print('all_f1_list =', all_f1_list)
+    # print('all_macro_f1_list =', all_macro_f1_list)
+    # print("=======================================================================")
+    test_loss,test_acc,test_f1,test_macro_f1 = evaluate(model, gcn_adj_list, test_dataloader, batch_size, epoch, 'Test_set', 1)
     all_loss_list['test'].append(test_loss)
-    all_f1_list['valid'].append(perform_metrics)
+    all_acc_list['test'].append(test_acc)
     all_f1_list['test'].append(test_f1)
-    print("Epoch:{} completed, Total Train Loss:{}, Valid Loss:{}, Spend {}m ".format(epoch, tr_loss, valid_loss, (time.time() - train_start)/60.0))
+    all_macro_f1_list['test'].append(test_macro_f1)
+    print("=======================================================================")
+    print('all_acc_list =', all_acc_list)
+    print('all_loss_list =', all_loss_list)
+    print('all_f1_list =', all_f1_list)
+    print('all_macro_f1_list =', all_macro_f1_list)
+    print("=======================================================================")
+    # valid_loss,valid_acc,perform_metrics,valid_macro_f1 = evaluate(model, gcn_adj_list, valid_dataloader, batch_size, epoch, 'Valid_set')
+    # all_loss_list['valid'].append(valid_loss)
+    # all_acc_list['valid'].append(valid_acc)
+    # all_f1_list['valid'].append(perform_metrics)
+    # all_macro_f1_list['valid'].append(valid_macro_f1)
+    # print("=======================================================================")
+    # print('all_acc_list =', all_acc_list)
+    # print('all_loss_list =', all_loss_list)
+    # print('all_f1_list =', all_f1_list)
+    # print('all_macro_f1_list =', all_macro_f1_list)
+    # print("=======================================================================")
+    print("Epoch:{} completed, Total Train Loss:{}, Valid Loss:{}, Spend {}m ".format(epoch, tr_loss, test_loss, (time.time() - train_start)/60.0))
     # Save a checkpoint
     # if valid_acc > valid_acc_prev:
-    if perform_metrics > perform_metrics_prev:
+    if test_f1 > perform_metrics_prev:
         to_save={'epoch': epoch, 'model_state': model.state_dict(),
-                    'valid_acc': valid_acc, 'lower_case': do_lower_case,
-                    'perform_metrics':perform_metrics}
+                    'test_acc': test_acc, 'lower_case': do_lower_case,
+                    'perform_metrics':test_f1}
         torch.save(to_save, os.path.join(output_dir, model_file_save))
         # valid_acc_prev = valid_acc
-        perform_metrics_prev = perform_metrics
+        perform_metrics_prev = test_f1
         test_f1_when_valid_best=test_f1
         # train_f1_when_valid_best=tr_f1
         valid_f1_best_epoch=epoch
+    if test_macro_f1 > best_macro_f1:
+        best_macro_f1 = test_macro_f1
+        best_macro_f1_epoch = epoch
+
+    # print("=======================================================================")
+    # print('all_acc_list =', all_acc_list)
+    # print('all_loss_list =', all_loss_list)
+    # print('all_f1_list =', all_f1_list)
+    # print('all_macro_f1_list =', all_macro_f1_list)
+    # print("=======================================================================")
 
 print('\n**Optimization Finished!,Total spend:',(time.time() - train_start)/60.0)
-print("**Valid weighted F1: %.3f at %d epoch."%(100*perform_metrics_prev,valid_f1_best_epoch))
-print("**Test weighted F1 when valid best: %.3f"%(100*test_f1_when_valid_best))
+print("**Test weighted F1: %.3f at %d epoch."%(100*perform_metrics_prev,valid_f1_best_epoch))
+print("**Test macro F1: %.3f at %d epoch."%(100*best_macro_f1,best_macro_f1_epoch))
+# print("**Test weighted F1 when valid best: %.3f"%(100*test_f1_when_valid_best))
