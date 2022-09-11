@@ -82,6 +82,7 @@ MAX_SEQ_LENGTH = 200
 gcn_embedding_dim=1
 gradient_accumulation_steps = 1
 bert_model_scale = 'bert-base-uncased'
+# bert_model_scale = 'roberta-base'
 do_lower_case = True
 warmup_proportion = 0.1
 
