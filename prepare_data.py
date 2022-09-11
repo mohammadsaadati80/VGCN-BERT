@@ -69,8 +69,8 @@ window_size = 20
 if cfg_ds in ('mr','sst','cola', 'olid'):
     window_size = 1000 # use whole sentence
 
-tfidf_mode='only_tf'  
-# tfidf_mode='all_tfidf' 
+# tfidf_mode='only_tf'  
+tfidf_mode='all_tfidf' 
 
 # 在clean doc时是否使用bert_tokenizer分词, data3时不用更好
 cfg_use_bert_tokenizer_at_clean=True

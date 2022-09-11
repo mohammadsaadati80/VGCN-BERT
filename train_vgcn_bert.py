@@ -99,8 +99,8 @@ if not os.path.exists(output_dir):
 perform_metrics_str=['weighted avg','f1-score']
 
 # cfg_add_linear_mapping_term=False
-cfg_vocab_adj='pmi'
-# cfg_vocab_adj='all'
+# cfg_vocab_adj='pmi'
+cfg_vocab_adj='all'
 # cfg_vocab_adj='tf'
 cfg_adj_npmi_threshold=0.2
 cfg_adj_tf_threshold=0
