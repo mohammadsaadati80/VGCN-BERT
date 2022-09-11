@@ -63,12 +63,12 @@ will_train_mode_from_checkpoint=True if args.load==1 else False
 learning_rate0=args.lr
 l2_decay=args.l2
 
-dataset_list={'sst', 'cola'}
+dataset_list={'sst', 'cola', 'olid'}
 # hate: 10k, mr: 6753, sst: 7792, r8: 5211
 
 total_train_epochs = 9 
 dropout_rate = 0.2  #0.5 # Dropout rate (1 - keep probability).
-if cfg_ds=='sst':
+if cfg_ds=='sst' or cfg_ds=='olid':
     batch_size = 16 #12   
     learning_rate0 = 1e-5 #2e-5  
     # l2_decay = 0.001
@@ -270,7 +270,7 @@ def evaluate(model, gcn_adj_list,predict_dataloader, batch_size, epoch_th, datas
         f1_metrics=f1_score(np.array(all_label_ids).reshape(-1),
             np.array(predict_out).reshape(-1), average='weighted')
         print("Report:\n"+classification_report(np.array(all_label_ids).reshape(-1),
-            np.array(predict_out).reshape(-1),digits=4))
+            np.array(predict_out).reshape(-1),digits=4, target_names=['NOT', 'OFF'])) # target_names=['abusive', 'normal', 'hateful', 'spam']
 
     ev_acc = correct/total
     end = time.time()

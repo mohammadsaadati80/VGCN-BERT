@@ -45,7 +45,7 @@ args = parser.parse_args()
 cfg_ds = args.ds
 cfg_del_stop_words=True if args.sw==1 else False
 
-dataset_list={'sst', 'cola'}
+dataset_list={'sst', 'cola', 'olid'}
 
 if cfg_ds not in dataset_list:
     sys.exit("Dataset choice error!")
@@ -66,7 +66,7 @@ test_data_taux = 0.10
 
 # word co-occurence with context windows
 window_size = 20
-if cfg_ds in ('mr','sst','cola'):
+if cfg_ds in ('mr','sst','cola', 'olid'):
     window_size = 1000 # use whole sentence
 
 tfidf_mode='only_tf'  
@@ -108,9 +108,12 @@ def del_http_user_tokenize(tweet):
 
 
 #%%
-if cfg_ds=='sst':
+if cfg_ds=='sst' or cfg_ds=='olid':
     from get_sst_data import DataReader
-    train, valid, test = DataReader("data/SST-2/train.txt","./data/SST-2/dev.txt","./data/SST-2/test.txt").read()
+    if cfg_ds =='olid':
+        train, valid, test = DataReader("./train.txt","./dev.txt","./test.txt").read()
+    else:
+        train, valid, test = DataReader("data/SST-2/train.txt","./data/SST-2/dev.txt","./data/SST-2/test.txt").read()
     random.shuffle(train)
     random.shuffle(valid)
     random.shuffle(test)
@@ -247,7 +250,7 @@ for i,doc_content in enumerate(doc_content_list):
     doc_words = []
     for word in words:
         # if tmp_word_freq[word] >= freq_min_for_word_choice:
-        if cfg_ds in ('mr','sst','cola'):
+        if cfg_ds in ('mr','sst','cola', 'olid'):
             doc_words.append(word)
         elif word not in stop_words and tmp_word_freq[word] >= freq_min_for_word_choice:
             doc_words.append(word)
@@ -295,7 +298,7 @@ Build graph
 '''
 print('Build graph...')
 
-if cfg_ds in ('mr', 'sst','cola'):
+if cfg_ds in ('mr', 'sst','cola', 'olid'):
     shuffled_clean_docs=clean_docs
     train_docs=shuffled_clean_docs[:train_size]
     valid_docs=shuffled_clean_docs[train_size:train_size+valid_size]
