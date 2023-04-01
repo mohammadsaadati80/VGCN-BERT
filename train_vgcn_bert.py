@@ -68,7 +68,7 @@ l2_decay=args.l2
 dataset_list={'sst', 'cola', 'olid'}
 # hate: 10k, mr: 6753, sst: 7792, r8: 5211
 
-total_train_epochs = 20 
+total_train_epochs = 9 #20 
 dropout_rate = 0.2  #0.5 # Dropout rate (1 - keep probability).
 if cfg_ds=='sst' or cfg_ds=='olid':
     batch_size = 16 #12   
@@ -399,7 +399,7 @@ for epoch in range(start_epoch, total_train_epochs):
     # print('all_f1_list =', all_f1_list)
     # print('all_macro_f1_list =', all_macro_f1_list)
     # print("=======================================================================")
-    test_loss,test_acc,test_f1,test_macro_f1 = evaluate(model, gcn_adj_list, test_dataloader, batch_size, epoch, 'Test_set', 1)
+    test_loss,test_acc,test_f1,test_macro_f1 = evaluate(model, gcn_adj_list, test_dataloader, batch_size, epoch, 'Test_set')
     all_loss_list['test'].append(test_loss)
     all_acc_list['test'].append(test_acc)
     all_f1_list['test'].append(test_f1)
