@@ -202,7 +202,7 @@ def clean_str(string):
     Tokenization/string cleaning for all datasets except for SST.
     Original taken from https://github.com/yoonkim/CNN_sentence/blob/master/process_data.py
     """
-    string = re.sub(r"[^A-Za-z0-9(),!?\'\`]", " ", string)
+    string = re.sub(r"[^A-Za-z0-9(),!?#\'\`]", " ", string)
     # string = " ".join(re.split("[^a-zA-Z]", string.lower())).strip()
     string = re.sub(r"\'s", " \'s", string)
     string = re.sub(r"\'ve", " \'ve", string)
@@ -227,10 +227,24 @@ if cfg_use_bert_tokenizer_at_clean:
     from pytorch_pretrained_bert import BertTokenizer
     bert_tokenizer = BertTokenizer.from_pretrained(bert_model_scale, do_lower_case=bert_lower_case)
 
+def split_hashtag(_string):
+    s_list = _string.split()
+    output_list = []
+    hashtag_list = []
+    for word in s_list:
+        if word[0] == '#' or word[0] == "#":
+            hashtag_list.append(word)
+        else:
+            output_list.append(word)
+    output_s = ' '.join(output_list).strip()
+    return output_s, hashtag_list
+
 for doc_content in doc_content_list:
     new_doc = clean_str(doc_content)
     if cfg_use_bert_tokenizer_at_clean:
-        sub_words = bert_tokenizer.tokenize(new_doc)
+        doc_without_hashtag, hashtag_list = split_hashtag(new_doc)
+        sub_words = bert_tokenizer.tokenize(doc_without_hashtag)
+        sub_words.extend(hashtag_list)
         sub_doc=' '.join(sub_words).strip()
         new_doc=sub_doc
     new_doc_content_list.append(new_doc)
@@ -520,6 +534,38 @@ for i in range(n_docs):
     if len(tfidf_vec)>0:
         weight.extend(tfidf_vec)
         tfidf_weight.extend(tfidf_vec)
+
+
+
+print('Calculate doc-#hashtag adj')
+
+doc_hashtag_row = []
+doc_hashtag_col = []
+doc_hashtag_weight = []
+
+for i in range(n_docs):
+    doc_words = shuffled_clean_docs[i]
+    # print(doc_words)
+    words = doc_words.split()
+    doc_word_set = set()
+    hashtag_vec = []
+    for word in words:
+        if word in doc_word_set:
+            continue
+        j = vocab_map[word]
+        key = str(i) + ',' + str(j)
+        doc_hashtag_row.append(i)
+        doc_hashtag_col.append(j)
+        # if word[0] == '#' or word[0] == "#":
+        if (word[0] == '#' or word[0] == "#") and len(word) > 1 and (word[1] != '#' and word[1] != "#"):
+            # print(word)
+            hashtag_vec.append(1)
+        else:
+            hashtag_vec.append(0)
+        doc_word_set.add(word)
+    if len(hashtag_vec)>0:
+        doc_hashtag_weight.extend(hashtag_vec)
+
     
 #%%
 '''
@@ -549,6 +595,16 @@ for i in range(vocab_size):
     if norm>0:
         vocab_tfidf.data[i]/=norm
 vocab_adj_tf=vocab_tfidf.dot(vocab_tfidf.T)
+
+
+adj_doc_hashtag=sp.csr_matrix((doc_hashtag_weight, (doc_hashtag_row, doc_hashtag_col)), shape=(corpus_size, vocab_size), dtype=np.float32)
+vocab_doc_hashtag=adj_doc_hashtag.T.tolil()
+for i in range(vocab_size):
+    norm=np.linalg.norm(vocab_doc_hashtag.data[i])
+    if norm>0:
+        vocab_doc_hashtag.data[i]/=norm
+vocab_adj_doc_hashtag=vocab_doc_hashtag.dot(vocab_doc_hashtag.T)
+
 
 # check
 print('Check adjacent matrix...')
@@ -600,5 +656,8 @@ if will_dump_objects:
         pkl.dump(vocab_adj_tf, f)
     with open(dump_dir+"/data_%s.shuffled_clean_docs"%cfg_ds, 'wb') as f:
         pkl.dump(shuffled_clean_docs, f)
+
+    with open(dump_dir+"/data_%s.vocab_adj_doc_hashtag"%(cfg_ds), 'wb') as f:
+        pkl.dump(vocab_adj_doc_hashtag, f)
         
 print('Data prepared, spend %.2f s'%(time.time()-start))

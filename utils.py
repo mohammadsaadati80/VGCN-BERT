@@ -140,7 +140,7 @@ def example2feature(example, tokenizer, gcn_vocab_map, max_seq_len, gcn_embeddin
     tokens = ["[CLS]"] + tokens_a + ["[SEP]" for i in range(gcn_embedding_dim+1)]
     segment_ids = [0] * len(tokens)
 
-    input_ids = tokenizer.convert_tokens_to_ids(tokens)
+    input_ids = tokenizer.convert_tokens_to_ids(tokens, gcn_vocab_map)
 
     # The mask has 1 for real tokens and 0 for padding tokens. Only real
     # tokens are attended to.

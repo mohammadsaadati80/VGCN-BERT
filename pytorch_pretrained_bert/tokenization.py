@@ -126,11 +126,14 @@ class BertTokenizer(object):
             split_tokens = self.wordpiece_tokenizer.tokenize(text)
         return split_tokens
 
-    def convert_tokens_to_ids(self, tokens):
+    def convert_tokens_to_ids(self, tokens, gcn_vocab_map):
         """Converts a sequence of tokens into ids using the vocab."""
         ids = []
         for token in tokens:
-            ids.append(self.vocab[token])
+            if token in self.vocab:
+                ids.append(self.vocab[token])
+            elif token in gcn_vocab_map:
+                ids.append(gcn_vocab_map[token])
         if len(ids) > self.max_len:
             logger.warning(
                 "Token indices sequence length is longer than the specified maximum "

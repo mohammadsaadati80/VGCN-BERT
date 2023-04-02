@@ -99,7 +99,8 @@ if not os.path.exists(output_dir):
 perform_metrics_str=['weighted avg','f1-score']
 
 # cfg_add_linear_mapping_term=False
-cfg_vocab_adj='pmi'
+# cfg_vocab_adj='pmi'
+cfg_vocab_adj='doc-#'
 # cfg_vocab_adj='all'
 # cfg_vocab_adj='tf'
 cfg_adj_npmi_threshold=0.2
@@ -135,12 +136,12 @@ print('\n----- Prepare data set -----')
 print('  Load/shuffle/seperate',cfg_ds,'dataset, and vocabulary graph adjacent matrix')
 
 objects=[]
-names = [ 'labels','train_y','train_y_prob', 'valid_y','valid_y_prob','test_y','test_y_prob', 'shuffled_clean_docs','vocab_adj_tf','vocab_adj_pmi','vocab_map'] 
+names = [ 'labels','train_y','train_y_prob', 'valid_y','valid_y_prob','test_y','test_y_prob', 'shuffled_clean_docs','vocab_adj_tf','vocab_adj_pmi','vocab_map', 'vocab_adj_doc_hashtag'] 
 for i in range(len(names)):
     datafile="./"+data_dir+"/data_%s.%s"%(cfg_ds,names[i])
     with open(datafile, 'rb') as f:
         objects.append(pkl.load(f, encoding='latin1'))
-lables_list,train_y, train_y_prob,valid_y,valid_y_prob,test_y,test_y_prob, shuffled_clean_docs,gcn_vocab_adj_tf,gcn_vocab_adj,gcn_vocab_map=tuple(objects)
+lables_list,train_y, train_y_prob,valid_y,valid_y_prob,test_y,test_y_prob, shuffled_clean_docs,gcn_vocab_adj_tf,gcn_vocab_adj,gcn_vocab_map,vocab_adj_doc_hashtag=tuple(objects)
 
 label2idx=lables_list[0]
 idx2label=lables_list[1]
@@ -173,6 +174,8 @@ if cfg_adj_npmi_threshold>0:
 
 if cfg_vocab_adj=='pmi':
     gcn_vocab_adj_list=[gcn_vocab_adj]
+elif cfg_vocab_adj=='doc-#':
+    gcn_vocab_adj_list=[gcn_vocab_adj_tf,vocab_adj_doc_hashtag]   
 elif cfg_vocab_adj=='tf':
     gcn_vocab_adj_list=[gcn_vocab_adj_tf]
 elif cfg_vocab_adj=='all':
